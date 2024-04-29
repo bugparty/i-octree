@@ -366,11 +366,12 @@ namespace thuni
 	class Octant
 	{
 	public:
-		bool isActive;
-		float x, y, z;		 // center
-		float extent;		 // half of side-length
-		std::vector<float *> points;
+		bool isActive;       /// isActive is set to false when it is deleted
+		float x, y, z;		 /// the coordinates of the center of the octant in 3D space.
+		float extent;		 /// The half-length of the sides of the cube that the octant represents.
+		std::vector<float *> points; ///A vector that stores pointers to the coordinates of the points contained within this octant.
 		// Matrix<float> ordered_points;
+		///An array of pointers to the child octants. Each octant can have up to eight children, corresponding to the eight subdivisions of a cube
 		Octant **child; // 对于叶子节点可减少 56字节的内存需求
 
 		Octant() : x(0.0f), y(0.0f), z(0.0f), extent(0.0f)
@@ -1447,7 +1448,7 @@ namespace thuni
 				}
 			}
 		}
-
+		// 实现
 		void radiusNeighbors(const Octant *octant, const float * query, float radius, float sqrRadius, std::vector<float*> &resultIndices)
 		{
 			if (!octant->isActive)
@@ -1499,7 +1500,14 @@ namespace thuni
 				radiusNeighbors(octant->child[c], query, radius, sqrRadius, resultIndices);
 			}
 		}
-
+/**
+Operation:
+It clears the resultIndices at the beginning.
+Checks if the root node of the octree is nullptr (empty tree) and returns if true.
+Calculates the squared radius for distance comparison (to avoid square root calculations for efficiency).
+Calls a recursive helper function radiusNeighbors (overloaded) that explores the octree, checking each node and its children recursively,
+ and adding points to resultIndices if they lie within the specified radius.
+*/
 		void radiusNeighbors(const Octant *octant, const float * query, float radius, float sqrRadius, std::vector<float*> &resultIndices, std::vector<float> &distances)
 		{
 			if (!octant->isActive)

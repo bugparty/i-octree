@@ -468,7 +468,7 @@ namespace thuni
 		size_t m_bucketSize;
 		float m_minExtent;
 		bool m_downSize;
-		int dim=4;
+		int dim=4; /// the size of 1 point 4 means x,y,z,index
 		size_t ordered_indies[8][7]={
 			{1, 2, 4, 3, 5, 6, 7},
 			{0, 3, 5, 2, 4, 7, 6},
@@ -1034,7 +1034,9 @@ namespace thuni
 				delete [] points[i];
 			}
 		}
-
+        /// \brief create octant
+        // first, arrange the points in morton code order in the child_points vector
+        // then, calculate the center of the cube , create the child nodes according to the morton code
 		Octant * createOctant_record(float x, float y, float z, float extent, std::vector<float *> & points)
 		{
 			// For a leaf we don't have to change anything; points are already correctly linked or correctly reordered.
@@ -1046,12 +1048,19 @@ namespace thuni
 			octant->extent = extent;
 			info_record.add_octant(octant);
 			static const float factor[] = {-0.5f, 0.5f};
+            // subdivide if the number of points in the Octant is greater than the bucket size (size > m_bucketSize)
+            // and the size of the Octant is larger than twice the minimum extent (extent > 2 * m_minExtent).
+            // If both conditions are met, the Octant is subdivided into eight smaller Octants.
 			if (size > m_bucketSize && extent > 2 * m_minExtent) // 32 0
 			{
 				std::vector<std::vector<float *>> child_points(8, std::vector<float *>());
 				for (size_t i = 0; i < size; ++i)
 				{
 					float * p = points[i];
+                    // what is morton code https://youtu.be/R-Suki2gD7s
+                    // https://en.wikipedia.org/wiki/Octree
+                    // Morton code map 3 dim data to 1 dim while preserving locality of the data points.
+                    // put the point in the bucket of  index of calculated morton code
 					size_t mortonCode = 0;
 					if (p[0] > x) mortonCode |= 1;
 					if (p[1] > y) mortonCode |= 2;
@@ -1065,13 +1074,14 @@ namespace thuni
 				{
 					if (child_points[i].size() == 0)
 						continue;
+                    /// calculate the cube center of the child node
 					float childX = x + factor[(i & 1) > 0] * extent;
 					float childY = y + factor[(i & 2) > 0] * extent;
 					float childZ = z + factor[(i & 4) > 0] * extent;
 					octant->child[i] = createOctant_record(childX, childY, childZ, childExtent, child_points[i]);
 				}
 			}
-			else
+			else // no need to subdivide
 			{
 				const size_t size = points.size();
 				octant->points.resize(size, 0);

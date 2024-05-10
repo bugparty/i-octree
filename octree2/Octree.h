@@ -366,10 +366,15 @@ namespace thuni
 	class Octant
 	{
 	public:
-		bool isActive;       /// isActive is set to false when it is deleted
-		float x, y, z;		 /// the coordinates of the center of the octant in 3D space.
-		float extent;		 /// The half-length of the sides of the cube that the octant represents.
-		std::vector<float *> points; ///A vector that stores pointers to the coordinates of the points contained within this octant.
+        /// isActive is set to false when it is deleted
+		bool isActive;
+        /// the coordinates of the center of the octant in 3D space.
+		float x, y, z;
+        /// The half-length of the sides of the cube that the octant represents.
+        /// or the length of the sides of the cube that the octant represents.
+		float extent;
+        ///A vector that stores pointers to the coordinates of the points contained within this octant.
+		std::vector<float *> points;
 		// Matrix<float> ordered_points;
 		///An array of pointers to the child octants. Each octant can have up to eight children, corresponding to the eight subdivisions of a cube
 		Octant **child; // 对于叶子节点可减少 56字节的内存需求
@@ -953,16 +958,20 @@ namespace thuni
 				log_file.close();
 			}
 		}
-
+        /// \brief get all the leaf nodes of the octree
+        /// @param octant: the root node to traverse
+        /// @param nodes: the vector to store the leaf nodes
 		void get_leaf_nodes(const Octant *octant, std::vector<const Octant *> &nodes)
 		{
 			if (octant == 0)
 				return;
+            // trivial case: leaf node
 			if (octant->child == nullptr)
 			{
 				nodes.push_back(octant);
 				return;
 			}
+            // general case: non-leaf children, add capacity by 8,then recursively traverse them
 			nodes.reserve(nodes.size()+8);
 			for (int i = 0; i < 8; i++)
 			{
@@ -1511,19 +1520,30 @@ namespace thuni
 			}
 		}
 /**
+
 Operation:
-It clears the resultIndices at the beginning.
 Checks if the root node of the octree is nullptr (empty tree) and returns if true.
 Calculates the squared radius for distance comparison (to avoid square root calculations for efficiency).
 Calls a recursive helper function radiusNeighbors (overloaded) that explores the octree, checking each node and its children recursively,
  and adding points to resultIndices if they lie within the specified radius.
+  * @param octant: the root node to search from
+  * @param query: 3 dim point
+  * @param resultIndices: the indices of the points within the radius
+  * @param distances: the squared distances of the points within the radius
+  * @param radius: this parameter is not used in the function, but is required for the function signature to match the overloaded function
+  * @param sqrRadius: the squared radius within which to search for points
+  */
 */
 		void radiusNeighbors(const Octant *octant, const float * query, float radius, float sqrRadius, std::vector<float*> &resultIndices, std::vector<float> &distances)
 		{
 			if (!octant->isActive)
 				return;
-			if (3*octant->extent*octant->extent<sqrRadius && contains(query, sqrRadius, octant))
+            // The expression 3*octant->extent*octant->extent calculates the square of the diagonal of the cube,
+            // which is the maximum possible squared distance between any point in the octant and the center of the octant.
+            // if the query radius is all in the cube of the octant
+            if (3*octant->extent*octant->extent<sqrRadius && contains(query, sqrRadius, octant))
 			{
+                // get all leaf nodes as candidate octants
 				std::vector<const Octant *> candidate_octants;
 				get_leaf_nodes(octant, candidate_octants);
 				for(size_t k=0; k<candidate_octants.size(); k++)
@@ -1531,10 +1551,13 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 					const size_t size = candidate_octants[k]->points.size();
 					const size_t result_size = resultIndices.size();
 					resultIndices.resize(result_size+size);
+                    // traverse all points in the candidate octant
 					for (size_t i = 0; i < size; ++i)
 					{
 						const float * p = candidate_octants[k]->points[i];
-						float dist = 0, diff = 0;
+                        // squared distance between the point and the query point
+						float dist = 0;
+                        float diff = 0;
 						for(size_t j = 0; j < 3; ++j )
 						{
 							diff = p[j] - query[j];
@@ -1546,6 +1569,7 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 				}
 				return;
 			}
+            // if the octant is a leaf node
 			if (octant->child == nullptr)
 			{
 				const size_t size = octant->points.size();
@@ -1558,6 +1582,8 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 						diff = p[j] - query[j];
 						dist += diff*diff;
 					}
+                    // if the squared distance is less than the squared radius,
+                    // add the point and it's squared distance to the result
 					if (dist < sqrRadius)
 					{
 						resultIndices.push_back(octant->points[i]);
@@ -1568,7 +1594,7 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 			}
 			for (size_t c = 0; c < 8; ++c)
 			{
-				if (octant->child[c] == 0)
+				if (octant->child[c] == nullptr)
 					continue;
 				if (!overlaps(query, sqrRadius, octant->child[c]))
 					continue;
@@ -1835,15 +1861,18 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 				return;
 			}
 		}
-
+        /** \brief test if search ball S(q,r) overlaps with octant
+         * @param query    3 dim point to query
+         * @param sqRadius  "squared" radius
+         * @param o       pointer to octant
+         * @return true, if search ball overlaps with octant, false otherwise.
+         */
 		bool overlaps(const float * query,float sqRadius, const Octant *o)
 		{
-			/** \brief test if search ball S(q,r) overlaps with octant
-			 * @param query   query point
-			 * @param radius  "squared" radius
-			 * @param o       pointer to octant
-			 * @return true, if search ball overlaps with octant, false otherwise.
-			 */
+            // abs(query[0] - o->x) is the distance between the query point and the center of the octant in the x direction.
+            // abs(query[0] - o->x) - o->extent is the distance between the query point and the surface of the octant in the x direction.
+            // so x,y,z is the distance between the query point and the surface of the octant in the x,y,z direction.
+            // if x,y,z is greater than 0, the query point is outside the octant in that direction.
 			// we exploit the symmetry to reduce the test to testing if its inside the Minkowski sum around the positive quadrant.
 			float x = std::abs(query[0] - o->x) - o->extent;
 			float y = std::abs(query[1] - o->y) - o->extent;
@@ -1851,8 +1880,11 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 			// float maxdist = radius + o->extent;
 			// Completely outside, since q' is outside the relevant area.
 			// std::abs(query[0] - o->x) - o->extent > radius
+            // if one dimension is outside the surface and is greater than the radius,
+            // the search ball is completely outside the octant.
 			if ((x > 0 && x*x>sqRadius) || (y > 0 && y*y>sqRadius) || (z > 0 && z*z>sqRadius))
 				return false;
+            // dimensions count that are inside the surface region of the octant.
 			int32_t num_less_extent = (x < 0) + (y < 0) + (z < 0);
 			// Checking different cases:
 			// a. inside the surface region of the octant.
@@ -1875,15 +1907,16 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 			z = std::max(std::abs(query[2] - o->z) - o->extent, 0.0f);
 			return x*x+y*y+z*z;
 		}
-
+         /*
+         * \brief test if search ball S(q,r) contains octant
+         * @param query   3 dim point to query
+         * @param sqRadius "squared" radius
+         * @param octant   pointer to octant
+         * @return true, if search ball overlaps with octant, false otherwise.
+         */
 		bool contains(const float * query, float sqRadius, const Octant *o)
 		{
-			/** \brief test if search ball S(q,r) contains octant
-			 * @param query    query point
-			 * @param sqRadius "squared" radius
-			 * @param octant   pointer to octant
-			 * @return true, if search ball overlaps with octant, false otherwise.
-			 */
+
 			// we exploit the symmetry to reduce the test to test
 			// whether the farthest corner is inside the search ball.
 			float x = std::abs(query[0] - o->x) + o->extent;
@@ -1892,15 +1925,15 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 
 			return (x*x+y*y+z*z < sqRadius);
 		}
-
+       /** \brief test if search ball S(q,r) is completely inside octant.
+         * @param query   query point
+         * @param radius2  radius r*r
+         * @param octant  point to octant.
+         * @return true, if search ball is completely inside the octant, false otherwise.
+         */
 		bool inside(const float * query, float radius2, const Octant *octant)
 		{
-			/** \brief test if search ball S(q,r) is completely inside octant.
-			 * @param query   query point
-			 * @param radius2  radius r*r
-			 * @param octant  point to octant.
-			 * @return true, if search ball is completely inside the octant, false otherwise.
-			 */
+
 			// we exploit the symmetry to reduce the test to test
 			// whether the farthest corner is inside the search ball.
 			float x = octant->extent - std::abs(query[0] - octant->x);

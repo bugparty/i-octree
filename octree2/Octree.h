@@ -474,6 +474,8 @@ namespace thuni
 		float m_minExtent;
 		bool m_downSize;
 		int dim=4; /// the size of 1 point 4 means x,y,z,index
+		/// the search order if you searched a morton code first and then you wants to iterate the remains child nodes
+		/// the first dimension is the morton code, the second dimension is the search order of the child nodes of the child indices
 		size_t ordered_indies[8][7]={
 			{1, 2, 4, 3, 5, 6, 7},
 			{0, 3, 5, 2, 4, 7, 6},
@@ -1467,14 +1469,23 @@ namespace thuni
 				}
 			}
 		}
-		// 实现
+		/// \brief search for points within a radius of a query point
+        /// @param octant: the root node to search from
+        /// @param query: 3 dim point to search around
+        /// @param radius: the radius within which to search for points
+        /// @param sqrRadius: the squared radius within which to search for points
+        /// @param resultIndices: the indices of the points within the radius
 		void radiusNeighbors(const Octant *octant, const float * query, float radius, float sqrRadius, std::vector<float*> &resultIndices)
 		{
 			if (!octant->isActive)
 				return;
-			if (3*octant->extent*octant->extent<sqrRadius && contains(query, sqrRadius, octant))
+            // The expression 3*octant->extent*octant->extent calculates the square of the diagonal of the cube,
+            // which is the maximum possible squared distance between any point in the octant and the center of the octant.
+            // if the query radius is all in the cube of the octant
+			if (3*octant->extent*octant->extent<sqrRadius &&contains(query, sqrRadius, octant))
 			{
-				// printf("contains\n");
+				// get all leaf nodes as candidate octants
+                // since the query radius is all in the cube of the octant, all points in the octant are within the radius
 				std::vector<const Octant *> candidate_octants;
 				candidate_octants.reserve(8);
 				get_leaf_nodes(octant, candidate_octants);
@@ -1492,6 +1503,7 @@ namespace thuni
 				}
 				return;
 			}
+            // if the octant is a leaf node,search all points in the octant
 			if (octant->child == nullptr)
 			{
 				const size_t size = octant->points.size();
@@ -1510,9 +1522,10 @@ namespace thuni
 				}
 				return;
 			}
+            // recursively search the children of the octant
 			for (size_t c = 0; c < 8; ++c)
 			{
-				if (octant->child[c] == 0)
+				if (octant->child[c] == nullptr)
 					continue;
 				if (!overlaps(query, sqrRadius, octant->child[c]))
 					continue;
@@ -1601,11 +1614,18 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 				radiusNeighbors(octant->child[c], query, radius, sqrRadius, resultIndices, distances);
 			}
 		}
-
+        /// \brief search for points within a radius of a query point v2 version?
+        /// @param octant: the root node to search from
+        /// @param query: 3 dim point to search around
+        /// @param sqrRadius: the squared radius within which to search for points
+        /// @param resultIndices: the indices of the points within the radius
+        /// @param distances: the squared distances of the points within the radius
 		bool radiusNeighbors2(const Octant *octant, const float * query, float sqrRadius, std::vector<size_t> &resultIndices, std::vector<float> &distances)
 		{
+            // skip if the octant is not active
 			if (!octant->isActive)
 				return false;
+            // if the octant is a leaf node, search all points in the octant
 			if (octant->child == nullptr)
 			{
 				const size_t size = octant->points.size();
@@ -1627,19 +1647,22 @@ Calls a recursive helper function radiusNeighbors (overloaded) that explores the
 				}
 				return inside(query, sqrRadius, octant); // 如果堆已经满了且最远点在当前网格内，则不必搜索了
 			}
+            //encode the query point into a morton code
 			size_t mortonCode = 0;
 			if (query[0] > octant->x) mortonCode |= 1;
 			if (query[1] > octant->y) mortonCode |= 2;
 			if (query[2] > octant->z) mortonCode |= 4;
-			if (octant->child[mortonCode] != 0)
+            // this time just search the child node in the morton code direction
+			if (octant->child[mortonCode] != nullptr)
 			{
 				if (radiusNeighbors2(octant->child[mortonCode], query, sqrRadius, resultIndices, distances))
 					return true;
 			}
+            // search the rest of the child nodes
 			for (int i = 0; i < 7; ++i)
 			{
 				int c = ordered_indies[mortonCode][i];
-				if (octant->child[c] == 0)
+				if (octant->child[c] == nullptr)
 					continue;
 				if (!overlaps(query, sqrRadius, octant->child[c]))
 					continue;
